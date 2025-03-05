@@ -38,9 +38,8 @@ type Unit struct {
 }
 
 type VitalSign struct {
-	ID          int64 `json:"id"`
-	UnitID      int64 `json:"unit_id"`
-	UnitObj     Unit
+	ID          int64  `json:"id"`
+	UnitObj     Unit   `json:"unit"`
 	Description string `json:"description"`
 }
 
@@ -95,18 +94,15 @@ type Shape struct {
 
 type Formulation struct {
 	ID       int64 `json:"id"`
-	ShapeID  int64 `json:"shape_id"`
-	ShapeObj Shape
-	UnitID   int64 `json:"unit_id"`
-	UnitObj  Unit
+	ShapeObj Shape `json:"shape"`
+	UnitObj  Unit  `json:"unit"`
 }
 
 type Medicine struct {
-	ID             int64 `json:"id"`
-	FormulationID  int64 `json:"formulation_id"`
-	FormulationObj Formulation
-	Name           string `json:"name"`
-	Dose           int64  `json:"dose"`
+	ID             int64       `json:"id"`
+	FormulationObj Formulation `json:"formulation"`
+	Name           string      `json:"name"`
+	Dose           int64       `json:"dose"`
 }
 
 type Treatment struct {
