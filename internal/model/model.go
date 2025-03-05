@@ -13,14 +13,13 @@ type Exam struct {
 }
 
 type Record struct {
-	ID         int64 `json:"id"`
-	PatientID  int64 `json:"patient_id"`
-	PatientObj Patient
-	Date       string `json:"rdate"`
-	Age        int64  `json:"age"`
-	Weight     int64  `json:"weight"`
-	Height     int64  `json:"height"`
-	Duration   int64  `json:"duration"`
+	ID         int64   `json:"id"`
+	PatientObj Patient `json:"patient"`
+	Date       string  `json:"rdate"`
+	Age        int64   `json:"age"`
+	Weight     int64   `json:"weight"`
+	Height     int64   `json:"height"`
+	Duration   int64   `json:"duration"`
 }
 
 type RecordExam struct {

@@ -26,6 +26,9 @@ func main() {
 	router.GET("/patients", getPatients)
 	router.GET("/patients/:id", getPatientById)
 	router.GET("/patients/search", getPatientsByName)
+	router.GET("/records", getRecords)
+	router.GET("/records/:id", getRecordsById)
+	router.GET("/records/search", getRecordsByPatient)
 	router.GET("/symptoms", getSymptoms)
 	router.GET("/symptoms/search", getSymptomsByDesc)
 	router.GET("/vital-signs", getVitalSigns)
@@ -33,6 +36,7 @@ func main() {
 	router.POST("/diseases", postDiseases)
 	router.POST("/medicines", postMedicines)
 	router.POST("/patients", postPatients)
+	router.POST("/records", postRecords)
 	router.POST("/symptoms", postSymptoms)
 
 	router.Run("localhost:8080")
@@ -590,4 +594,134 @@ func getMedicinesByDesc(c *gin.Context) {
 	}
 
 	c.IndentedJSON(http.StatusOK, medicines)
+}
+
+func getRecords(c *gin.Context) {
+	var records []model.Record
+
+	rows, err := db.Query(
+		`SELECT r.id, p.id, p.name, p.last_name, r.rdate, r.duration 
+		FROM record AS r 
+		INNER JOIN patient AS p
+		ON patient_id = p.id 
+		ORDER BY r.rdate DESC LIMIT 30`)
+
+	if err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var record model.Record
+
+		if err := rows.Scan(
+			&record.ID, &record.PatientObj.ID,
+			&record.PatientObj.Name, &record.PatientObj.Lastname,
+			&record.Date, &record.Duration); err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		records = append(records, record)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, records)
+}
+
+func getRecordsByPatient(c *gin.Context) {
+	var records []model.Record
+	query := c.DefaultQuery("q", "")
+	query = "%" + query + "%"
+	rows, err := db.Query(
+		`SELECT r.id, p.id, p.name, p.last_name, r.rdate, r.duration 
+		FROM record AS r 
+		INNER JOIN patient AS p
+		ON patient_id = p.id 
+		WHERE p.name LIKE ? OR p.last_name LIKE ? 
+		ORDER BY r.rdate DESC LIMIT 30`, query, query)
+
+	if err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var record model.Record
+
+		if err := rows.Scan(
+			&record.ID, &record.PatientObj.ID,
+			&record.PatientObj.Name, &record.PatientObj.Lastname,
+			&record.Date, &record.Duration); err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		records = append(records, record)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, records)
+}
+
+// TODO COMPLETE ENDPOINT
+func getRecordsById(c *gin.Context) {
+	var record model.Record
+	id := c.Param("id")
+	row := db.QueryRow("SELECT * FROM record WHERE id = ?", id)
+
+	if err := row.Scan(&record.ID, &record.PatientObj.ID, &record.Date, &record.Age, &record.Weight, &record.Height, &record.Duration); err != nil {
+
+		if err == sql.ErrNoRows {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": "no such medical record"})
+			return
+		}
+
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, record)
+}
+
+// TODO COMPLETE ENDPOINT
+func postRecords(c *gin.Context) {
+	var record model.Record
+
+	//TODO BIND EVERY OBJECT
+	if err := c.BindJSON(&record); err != nil {
+		c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+		return
+	}
+
+	result, err := db.Exec(
+		"INSERT INTO record (patient_id, rdate, age, weight, height, duration) VALUES (?, ?, ?, ?, ?, ?)",
+		record.PatientObj.ID, record.Date, record.Age, record.Weight, record.Height, record.Duration)
+
+	if err != nil {
+		c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+		return
+	}
+
+	id, err := result.LastInsertId()
+
+	if err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
+	record.ID = id
+	c.IndentedJSON(http.StatusCreated, record)
 }
