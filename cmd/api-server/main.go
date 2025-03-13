@@ -3,13 +3,17 @@ package main
 import (
 	"database/sql"
 	"log"
+	"math"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jctorrestone/web-service-mr/internal/model"
 )
+
+const N = 10
 
 var db *sql.DB
 
@@ -65,9 +69,57 @@ func connect() {
 	log.Println("Connected!")
 }
 
+func getRecordsNum(sql_count string, args ...any) int64 {
+	var total int64
+
+	var row *sql.Row
+	if len(args) != 0 {
+		row = db.QueryRow(sql_count, args...)
+	} else {
+		row = db.QueryRow(sql_count)
+	}
+
+	if err := row.Scan(&total); err != nil {
+		return -1
+	}
+
+	return total
+}
+
+func getPaginationResponse(sql_count string, page int, args ...any) model.Response {
+	var response model.Response
+
+	response.Page = page
+	response.PrevPage = -1
+	response.NextPage = -1
+	response.Total = getRecordsNum(sql_count, args...)
+	response.LastPage = int(math.Ceil(float64(response.Total)/N) - 1)
+
+	if response.Page < 0 {
+		response.Page = 0
+	} else if response.Page > response.LastPage {
+		response.Page = response.LastPage
+	}
+
+	if response.Page > 0 {
+		response.PrevPage = response.Page - 1
+	}
+
+	if response.Page < response.LastPage {
+		response.NextPage = response.Page + 1
+	}
+
+	return response
+}
+
 func getPatients(c *gin.Context) {
 	var patients []model.Patient
-	rows, err := db.Query("SELECT * FROM patient ORDER BY last_name ASC")
+	sql_count := "SELECT COUNT(id) AS total FROM patient"
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+	response := getPaginationResponse(sql_count, page)
+
+	rows, err := db.Query("SELECT * FROM patient ORDER BY last_name ASC LIMIT ?, ?", response.Page*N, N)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -94,7 +146,8 @@ func getPatients(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, patients)
+	response.Data = patients
+	c.IndentedJSON(http.StatusOK, response)
 }
 
 func getPatientById(c *gin.Context) {
@@ -120,13 +173,19 @@ func getPatientById(c *gin.Context) {
 
 func getPatientsByName(c *gin.Context) {
 	var patients []model.Patient
+
+	sql_count := "SELECT COUNT(id) AS total FROM patient WHERE name LIKE ? OR last_name LIKE ?"
 	query := c.DefaultQuery("q", "")
 	query = "%" + query + "%"
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+	response := getPaginationResponse(sql_count, page, query, query)
 
 	rows, err := db.Query(
 		`SELECT * FROM patient 
 		WHERE name LIKE ? OR last_name LIKE ? 
-		ORDER BY last_name ASC`, query, query)
+		ORDER BY last_name ASC 
+		LIMIT ?, ?`, query, query, response.Page*N, N)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -153,7 +212,8 @@ func getPatientsByName(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, patients)
+	response.Data = patients
+	c.IndentedJSON(http.StatusOK, response)
 }
 
 func postPatients(c *gin.Context) {
@@ -216,7 +276,13 @@ func getExams(c *gin.Context) {
 
 func getDiseases(c *gin.Context) {
 	var diseases []model.Disease
-	rows, err := db.Query("SELECT * FROM disease")
+
+	sql_count := "SELECT COUNT(id) AS total FROM disease"
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+	response := getPaginationResponse(sql_count, page)
+
+	rows, err := db.Query("SELECT * FROM disease ORDER BY description ASC LIMIT ?, ?", response.Page*N, N)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -241,7 +307,8 @@ func getDiseases(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, diseases)
+	response.Data = diseases
+	c.IndentedJSON(http.StatusOK, response)
 }
 
 func postDiseases(c *gin.Context) {
@@ -274,9 +341,15 @@ func postDiseases(c *gin.Context) {
 
 func getDiseasesByDesc(c *gin.Context) {
 	var diseases []model.Disease
+
+	sql_count := "SELECT COUNT(id) AS total FROM disease WHERE description LIKE ?"
 	query := c.DefaultQuery("q", "")
 	query = "%" + query + "%"
-	rows, err := db.Query("SELECT * FROM disease WHERE description LIKE ?", query)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+	response := getPaginationResponse(sql_count, page, query)
+
+	rows, err := db.Query("SELECT * FROM disease WHERE description LIKE ? ORDER BY description ASC LIMIT ?, ?", query, response.Page*N, N)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -301,12 +374,19 @@ func getDiseasesByDesc(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, diseases)
+	response.Data = diseases
+	c.IndentedJSON(http.StatusOK, response)
 }
 
 func getSymptoms(c *gin.Context) {
 	var symptoms []model.Symptom
-	rows, err := db.Query("SELECT * FROM symptom")
+
+	sql_count := "SELECT COUNT(id) AS total FROM symptom"
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+	response := getPaginationResponse(sql_count, page)
+
+	rows, err := db.Query("SELECT * FROM symptom ORDER BY description ASC LIMIT ?, ?", response.Page*N, N)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -331,7 +411,8 @@ func getSymptoms(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, symptoms)
+	response.Data = symptoms
+	c.IndentedJSON(http.StatusOK, response)
 }
 
 func postSymptoms(c *gin.Context) {
@@ -364,9 +445,15 @@ func postSymptoms(c *gin.Context) {
 
 func getSymptomsByDesc(c *gin.Context) {
 	var symptoms []model.Symptom
+
+	sql_count := "SELECT COUNT(id) AS total FROM symptom WHERE description LIKE ?"
 	query := c.DefaultQuery("q", "")
 	query = "%" + query + "%"
-	rows, err := db.Query("SELECT * FROM symptom WHERE description LIKE ?", query)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+	response := getPaginationResponse(sql_count, page, query)
+
+	rows, err := db.Query("SELECT * FROM symptom WHERE description LIKE ? ORDER BY description ASC LIMIT ?, ?", query, response.Page*N, N)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -391,7 +478,8 @@ func getSymptomsByDesc(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, symptoms)
+	response.Data = symptoms
+	c.IndentedJSON(http.StatusOK, response)
 }
 
 func getVitalSigns(c *gin.Context) {
@@ -475,6 +563,12 @@ func getFormulations(c *gin.Context) {
 
 func getMedicines(c *gin.Context) {
 	var medicines []model.Medicine
+
+	sql_count := "SELECT COUNT(id) AS total FROM medicine"
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+	response := getPaginationResponse(sql_count, page)
+
 	rows, err := db.Query(
 		`SELECT m.id, f.id, s.id, s.description, u.id, u.symbol, u.description, m.name, m.dose 
 		FROM medicine AS m 
@@ -484,7 +578,8 @@ func getMedicines(c *gin.Context) {
 		ON shape_id = s.id 
 		INNER JOIN unit AS u 
 		ON unit_id = u.id 
-		ORDER BY m.name ASC`)
+		ORDER BY m.name ASC 
+		LIMIT ?, ?`, response.Page*N, N)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -516,7 +611,8 @@ func getMedicines(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, medicines)
+	response.Data = medicines
+	c.IndentedJSON(http.StatusOK, response)
 }
 
 func postMedicines(c *gin.Context) {
@@ -549,8 +645,14 @@ func postMedicines(c *gin.Context) {
 
 func getMedicinesByDesc(c *gin.Context) {
 	var medicines []model.Medicine
+
+	sql_count := "SELECT COUNT(id) AS total FROM medicine WHERE name LIKE ?"
 	query := c.DefaultQuery("q", "")
 	query = "%" + query + "%"
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+	response := getPaginationResponse(sql_count, page, query)
+
 	rows, err := db.Query(
 		`SELECT m.id, f.id, s.id, s.description, u.id, u.symbol, u.description, m.name, m.dose 
 		FROM medicine AS m 
@@ -561,7 +663,8 @@ func getMedicinesByDesc(c *gin.Context) {
 		INNER JOIN unit AS u 
 		ON unit_id = u.id 
 		WHERE m.name LIKE ? 
-		ORDER BY m.name ASC`, query)
+		ORDER BY m.name ASC 
+		LIMIT ?, ?`, query, response.Page*N, N)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -593,18 +696,25 @@ func getMedicinesByDesc(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, medicines)
+	response.Data = medicines
+	c.IndentedJSON(http.StatusOK, response)
 }
 
 func getRecords(c *gin.Context) {
 	var records []model.Record
+
+	sql_count := "SELECT COUNT(id) AS total FROM record"
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+	response := getPaginationResponse(sql_count, page)
 
 	rows, err := db.Query(
 		`SELECT r.id, p.id, p.name, p.last_name, r.rdate, r.duration 
 		FROM record AS r 
 		INNER JOIN patient AS p
 		ON patient_id = p.id 
-		ORDER BY r.rdate DESC LIMIT 30`)
+		ORDER BY r.rdate DESC  
+		LIMIT ?, ?`, response.Page*N, N)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -632,20 +742,33 @@ func getRecords(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, records)
+	response.Data = records
+	c.IndentedJSON(http.StatusOK, response)
 }
 
 func getRecordsByPatient(c *gin.Context) {
 	var records []model.Record
+
+	sql_count := `SELECT COUNT(r.id) AS total 
+		FROM record AS r 
+		INNER JOIN patient AS p 
+		ON patient_id = p.id 
+		WHERE p.name LIKE ? OR p.last_name LIKE ?`
+
 	query := c.DefaultQuery("q", "")
 	query = "%" + query + "%"
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+
+	response := getPaginationResponse(sql_count, page, query, query)
+
 	rows, err := db.Query(
 		`SELECT r.id, p.id, p.name, p.last_name, r.rdate, r.duration 
 		FROM record AS r 
 		INNER JOIN patient AS p
 		ON patient_id = p.id 
 		WHERE p.name LIKE ? OR p.last_name LIKE ? 
-		ORDER BY r.rdate DESC LIMIT 30`, query, query)
+		ORDER BY r.rdate DESC 
+		LIMIT ?, ?`, query, query, response.Page*N, N)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
@@ -673,7 +796,8 @@ func getRecordsByPatient(c *gin.Context) {
 		return
 	}
 
-	c.IndentedJSON(http.StatusOK, records)
+	response.Data = records
+	c.IndentedJSON(http.StatusOK, response)
 }
 
 // TODO COMPLETE ENDPOINT

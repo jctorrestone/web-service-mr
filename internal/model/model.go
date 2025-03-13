@@ -1,5 +1,16 @@
 package model
 
+type Data any
+
+type Response struct {
+	Data     Data  `json:"data"`
+	PrevPage int   `json:"prev_page"`
+	Page     int   `json:"page"`
+	NextPage int   `json:"next_page"`
+	LastPage int   `json:"last_page"`
+	Total    int64 `json:"total"`
+}
+
 type Patient struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`
