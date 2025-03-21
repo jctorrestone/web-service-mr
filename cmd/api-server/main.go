@@ -803,10 +803,24 @@ func getRecordsByPatient(c *gin.Context) {
 // TODO COMPLETE ENDPOINT
 func getRecordsById(c *gin.Context) {
 	var record model.Record
-	id := c.Param("id")
-	row := db.QueryRow("SELECT * FROM record WHERE id = ?", id)
+	var histories []model.DiseaseHistory
+	var symptoms []model.Symptom
+	var vitalSigns []model.RecordVitalSign
+	var idx []model.Disease
+	var exams []model.Exam
+	var treatments []model.Treatment
 
-	if err := row.Scan(&record.ID, &record.PatientObj.ID, &record.Date, &record.Age, &record.Weight, &record.Height, &record.Duration); err != nil {
+	id := c.Param("id")
+	row := db.QueryRow(
+		`SELECT * FROM record 
+		INNER JOIN patient 
+		ON record.patient_id=patient.id 
+		WHERE record.id = ?`, id)
+
+	if err := row.Scan(
+		&record.ID, &record.PatientObj.ID, &record.Date,
+		&record.Age, &record.Weight, &record.Height, &record.Duration,
+		&record.PatientObj.ID, &record.PatientObj.Name, &record.PatientObj.Lastname, &record.PatientObj.Gender); err != nil {
 
 		if err == sql.ErrNoRows {
 			c.IndentedJSON(http.StatusNotFound, gin.H{"message": "no such medical record"})
@@ -816,8 +830,187 @@ func getRecordsById(c *gin.Context) {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	}
+	//--------------------------------------
+	rows, _ := db.Query(
+		`SELECT dh.id, dh.record_id, d.id, d.description, dh.description 
+		FROM disease_history AS dh 
+		INNER JOIN disease AS d 
+		ON dh.disease_id=d.id 
+		WHERE dh.record_id=?`, id)
 
-	c.IndentedJSON(http.StatusOK, record)
+	defer rows.Close()
+
+	for rows.Next() {
+		var history model.DiseaseHistory
+
+		if err := rows.Scan(
+			&history.ID, &history.RecordID, &history.DiseaseID, &history.DiseaseDesc, &history.Description); err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		histories = append(histories, history)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+	//--------------------------------------
+	rows, _ = db.Query(
+		`SELECT * FROM symptom 
+		WHERE id IN (
+			SELECT symptom_id 
+			FROM record_symptom 
+			WHERE record_id=?
+		)`, id)
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var symptom model.Symptom
+
+		if err := rows.Scan(
+			&symptom.ID, &symptom.Description); err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		symptoms = append(symptoms, symptom)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+	//--------------------------------------
+	rows, _ = db.Query(
+		`SELECT * FROM disease 
+		WHERE id IN (
+			SELECT disease_id FROM idx 
+			WHERE record_id=?
+		)`, id)
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var disease model.Disease
+
+		if err := rows.Scan(
+			&disease.ID, &disease.Description); err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		idx = append(idx, disease)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+	//--------------------------------------
+	rows, _ = db.Query(
+		`SELECT * FROM exam 
+		WHERE id IN (
+			SELECT exam_id FROM record_exam 
+			WHERE record_id=?
+		)`, id)
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var exam model.Exam
+
+		if err := rows.Scan(
+			&exam.ID, &exam.Description); err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		exams = append(exams, exam)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+	//--------------------------------------
+	rows, _ = db.Query(
+		`SELECT rvs.id, rvs.record_id, vs.id, vs.description, u.id, u.symbol, rvs.value 
+		FROM record_vital_sign AS rvs
+		INNER JOIN vital_sign AS vs 
+		ON rvs.vital_sign_id=vs.id 
+		INNER JOIN unit AS u 
+		ON vs.unit_id=u.id 
+		WHERE rvs.record_id=?`, id)
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var vitalSign model.RecordVitalSign
+
+		if err := rows.Scan(
+			&vitalSign.ID, &vitalSign.RecordID, &vitalSign.VitalSignID,
+			&vitalSign.Description, &vitalSign.UnitID, &vitalSign.Symbol, &vitalSign.Value); err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		vitalSigns = append(vitalSigns, vitalSign)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+	//--------------------------------------
+	rows, _ = db.Query(
+		`SELECT t.id, t.record_id, m.id, m.name, m.dose, f.id, s.id, s.description, u.id, u.symbol, t.quantity, t.dosage, t.frequency, t.instructions 
+		FROM treatment AS t
+		INNER JOIN medicine AS m
+		ON t.medicine_id=m.id
+		INNER JOIN formulation AS f
+		ON m.formulation_id=f.id
+		INNER JOIN shape AS s
+		ON f.shape_id=s.id
+		INNER JOIN unit AS u
+		ON f.unit_id=u.id
+		WHERE t.record_id=?`, id)
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var treatment model.Treatment
+
+		if err := rows.Scan(
+			&treatment.ID, &treatment.RecordID, &treatment.MedicineID, &treatment.Name,
+			&treatment.Dose, &treatment.FormulationID, &treatment.ShapeID, &treatment.Description,
+			&treatment.UnitID, &treatment.Symbol, &treatment.Quantity, &treatment.Dosage,
+			&treatment.Frequency, &treatment.Instructions); err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		treatments = append(treatments, treatment)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
+	fullRecord := model.FullRecord{
+		RecordObj:       record,
+		DiseasesHistory: histories,
+		Symptoms:        symptoms,
+		VitalSigns:      vitalSigns,
+		Diseases:        idx,
+		Exams:           exams,
+		Treatments:      treatments,
+	}
+
+	c.IndentedJSON(http.StatusOK, fullRecord)
 }
 
 // TODO COMPLETE ENDPOINT
