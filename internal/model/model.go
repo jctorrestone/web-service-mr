@@ -35,6 +35,8 @@ type Exam struct {
 
 type Record struct {
 	ID         int64   `json:"id"`
+	Category   string  `json:"category"`
+	PrimaryID  int64   `json:"primary_record_id"`
 	PatientObj Patient `json:"patient"`
 	Date       string  `json:"rdate"`
 	Age        int64   `json:"age"`
@@ -44,7 +46,6 @@ type Record struct {
 }
 
 type RecordExam struct {
-	ID        int64 `json:"id"`
 	RecordID  int64 `json:"record_id"`
 	RecordObj Record
 	ExamID    int64 `json:"exam_id"`
@@ -64,7 +65,6 @@ type VitalSign struct {
 }
 
 type RecordVitalSign struct {
-	ID          int64   `json:"id"`
 	RecordID    int64   `json:"record_id"`
 	VitalSignID int64   `json:"vital_sign_id"`
 	Description string  `json:"vital_sign_desc"`
@@ -79,7 +79,6 @@ type Disease struct {
 }
 
 type DiseaseHistory struct {
-	ID          int64  `json:"id"`
 	RecordID    int64  `json:"record_id"`
 	DiseaseID   int64  `json:"disease_id"`
 	DiseaseDesc string `json:"disease_desc"`
@@ -92,7 +91,6 @@ type Symptom struct {
 }
 
 type RecordSymptom struct {
-	ID         int64 `json:"id"`
 	RecordID   int64 `json:"record_id"`
 	RecordObj  Record
 	SymptomID  int64 `json:"symptom_id"`
@@ -100,7 +98,6 @@ type RecordSymptom struct {
 }
 
 type Idx struct {
-	ID         int64 `json:"id"`
 	RecordID   int64 `json:"record_id"`
 	RecordObj  Record
 	DiseaseID  int64 `json:"disease_id"`
@@ -126,7 +123,6 @@ type Medicine struct {
 }
 
 type Treatment struct {
-	ID            int64   `json:"id"`
 	RecordID      int64   `json:"record_id"`
 	MedicineID    int64   `json:"medicine_id"`
 	Name          string  `json:"medicine_name"`

@@ -33,6 +33,7 @@ func main() {
 	router.GET("/records", getRecords)
 	router.GET("/records/:id", getRecordsById)
 	router.GET("/records/search", getRecordsByPatient)
+	router.GET("/sec-records/:id", getSecRecordsById)
 	router.GET("/symptoms", getSymptoms)
 	router.GET("/symptoms/search", getSymptomsByDesc)
 	router.GET("/vital-signs", getVitalSigns)
@@ -703,16 +704,19 @@ func getMedicinesByDesc(c *gin.Context) {
 func getRecords(c *gin.Context) {
 	var records []model.Record
 
-	sql_count := "SELECT COUNT(id) AS total FROM record"
+	sql_count := "SELECT COUNT(id) AS total FROM record WHERE category='primary'"
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
 
 	response := getPaginationResponse(sql_count, page)
 
 	rows, err := db.Query(
-		`SELECT r.id, p.id, p.name, p.last_name, r.rdate, r.duration 
+		`SELECT r.id, p.id, p.name, p.last_name, r.rdate, rd.duration 
 		FROM record AS r 
+		INNER JOIN record_description AS rd 
+		ON r.id = rd.record_id 
 		INNER JOIN patient AS p
-		ON patient_id = p.id 
+		ON rd.patient_id = p.id 
+		WHERE r.category='primary'
 		ORDER BY r.rdate DESC  
 		LIMIT ?, ?`, response.Page*N, N)
 
@@ -751,9 +755,11 @@ func getRecordsByPatient(c *gin.Context) {
 
 	sql_count := `SELECT COUNT(r.id) AS total 
 		FROM record AS r 
+		INNER JOIN record_description AS rd 
+		ON r.id = rd.record_id 
 		INNER JOIN patient AS p 
-		ON patient_id = p.id 
-		WHERE p.name LIKE ? OR p.last_name LIKE ?`
+		ON rd.patient_id = p.id 
+		WHERE r.category = 'primary' AND p.name LIKE ? OR p.last_name LIKE ?`
 
 	query := c.DefaultQuery("q", "")
 	query = "%" + query + "%"
@@ -762,11 +768,13 @@ func getRecordsByPatient(c *gin.Context) {
 	response := getPaginationResponse(sql_count, page, query, query)
 
 	rows, err := db.Query(
-		`SELECT r.id, p.id, p.name, p.last_name, r.rdate, r.duration 
+		`SELECT r.id, p.id, p.name, p.last_name, r.rdate, rd.duration 
 		FROM record AS r 
-		INNER JOIN patient AS p
-		ON patient_id = p.id 
-		WHERE p.name LIKE ? OR p.last_name LIKE ? 
+		INNER JOIN record_description AS rd 
+		ON r.id = rd.record_id 
+		INNER JOIN patient AS p 
+		ON rd.patient_id = p.id 
+		WHERE r.category = 'primary' AND p.name LIKE ? OR p.last_name LIKE ? 
 		ORDER BY r.rdate DESC 
 		LIMIT ?, ?`, query, query, response.Page*N, N)
 
@@ -812,15 +820,18 @@ func getRecordsById(c *gin.Context) {
 
 	id := c.Param("id")
 	row := db.QueryRow(
-		`SELECT * FROM record 
-		INNER JOIN patient 
-		ON record.patient_id=patient.id 
-		WHERE record.id = ?`, id)
+		`SELECT r.id, r.category, p.id, p.name, p.last_name, p.gender, r.rdate, rd.age, rd.weight, rd.height, rd.duration 
+		FROM record AS r 
+		INNER JOIN record_description AS rd
+		ON r.id = rd.record_id 
+		INNER JOIN patient AS p
+		ON rd.patient_id = p.id 
+		WHERE r.id = ?`, id)
 
 	if err := row.Scan(
-		&record.ID, &record.PatientObj.ID, &record.Date,
-		&record.Age, &record.Weight, &record.Height, &record.Duration,
-		&record.PatientObj.ID, &record.PatientObj.Name, &record.PatientObj.Lastname, &record.PatientObj.Gender); err != nil {
+		&record.ID, &record.Category, &record.PatientObj.ID, &record.PatientObj.Name,
+		&record.PatientObj.Lastname, &record.PatientObj.Gender, &record.Date,
+		&record.Age, &record.Weight, &record.Height, &record.Duration); err != nil {
 
 		if err == sql.ErrNoRows {
 			c.IndentedJSON(http.StatusNotFound, gin.H{"message": "no such medical record"})
@@ -832,7 +843,7 @@ func getRecordsById(c *gin.Context) {
 	}
 	//--------------------------------------
 	rows, _ := db.Query(
-		`SELECT dh.id, dh.record_id, d.id, d.description, dh.description 
+		`SELECT dh.record_id, d.id, d.description, dh.description 
 		FROM disease_history AS dh 
 		INNER JOIN disease AS d 
 		ON dh.disease_id=d.id 
@@ -844,7 +855,7 @@ func getRecordsById(c *gin.Context) {
 		var history model.DiseaseHistory
 
 		if err := rows.Scan(
-			&history.ID, &history.RecordID, &history.DiseaseID, &history.DiseaseDesc, &history.Description); err != nil {
+			&history.RecordID, &history.DiseaseID, &history.DiseaseDesc, &history.Description); err != nil {
 			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
 			return
 		}
@@ -937,7 +948,7 @@ func getRecordsById(c *gin.Context) {
 	}
 	//--------------------------------------
 	rows, _ = db.Query(
-		`SELECT rvs.id, rvs.record_id, vs.id, vs.description, u.id, u.symbol, rvs.value 
+		`SELECT rvs.record_id, vs.id, vs.description, u.id, u.symbol, rvs.value 
 		FROM record_vital_sign AS rvs
 		INNER JOIN vital_sign AS vs 
 		ON rvs.vital_sign_id=vs.id 
@@ -951,7 +962,7 @@ func getRecordsById(c *gin.Context) {
 		var vitalSign model.RecordVitalSign
 
 		if err := rows.Scan(
-			&vitalSign.ID, &vitalSign.RecordID, &vitalSign.VitalSignID,
+			&vitalSign.RecordID, &vitalSign.VitalSignID,
 			&vitalSign.Description, &vitalSign.UnitID, &vitalSign.Symbol, &vitalSign.Value); err != nil {
 			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
 			return
@@ -966,7 +977,7 @@ func getRecordsById(c *gin.Context) {
 	}
 	//--------------------------------------
 	rows, _ = db.Query(
-		`SELECT t.id, t.record_id, m.id, m.name, m.dose, f.id, s.id, s.description, u.id, u.symbol, t.quantity, t.dosage, t.frequency, t.instructions 
+		`SELECT t.record_id, m.id, m.name, m.dose, f.id, s.id, s.description, u.id, u.symbol, t.quantity, t.dosage, t.frequency, t.instructions 
 		FROM treatment AS t
 		INNER JOIN medicine AS m
 		ON t.medicine_id=m.id
@@ -984,7 +995,7 @@ func getRecordsById(c *gin.Context) {
 		var treatment model.Treatment
 
 		if err := rows.Scan(
-			&treatment.ID, &treatment.RecordID, &treatment.MedicineID, &treatment.Name,
+			&treatment.RecordID, &treatment.MedicineID, &treatment.Name,
 			&treatment.Dose, &treatment.FormulationID, &treatment.ShapeID, &treatment.Description,
 			&treatment.UnitID, &treatment.Symbol, &treatment.Quantity, &treatment.Dosage,
 			&treatment.Frequency, &treatment.Instructions); err != nil {
@@ -1015,17 +1026,26 @@ func getRecordsById(c *gin.Context) {
 
 // TODO COMPLETE ENDPOINT
 func postRecords(c *gin.Context) {
-	var record model.Record
+	var fullRecord model.FullRecord
 
 	//TODO BIND EVERY OBJECT
-	if err := c.BindJSON(&record); err != nil {
+	if err := c.BindJSON(&fullRecord); err != nil {
 		c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
 		return
 	}
 
-	result, err := db.Exec(
-		"INSERT INTO record (patient_id, rdate, age, weight, height, duration) VALUES (?, ?, ?, ?, ?, ?)",
-		record.PatientObj.ID, record.Date, record.Age, record.Weight, record.Height, record.Duration)
+	tx, err := db.Begin()
+	if err != nil {
+		c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+		return
+	}
+	defer tx.Rollback()
+
+	record := fullRecord.RecordObj
+
+	result, err := tx.Exec(
+		"INSERT INTO record (category, rdate) VALUES (?, ?)",
+		record.Category, record.Date)
 
 	if err != nil {
 		c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
@@ -1040,5 +1060,178 @@ func postRecords(c *gin.Context) {
 	}
 
 	record.ID = id
+
+	if record.Category == "primary" {
+		_, err = tx.Exec(
+			"INSERT INTO record_description (record_id, patient_id, age, weight, height, duration) VALUES (?, ?, ?, ?, ?, ?)",
+			record.ID, record.PatientObj.ID, record.Age, record.Weight, record.Height, record.Duration)
+
+		if err != nil {
+			c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+			return
+		}
+	} else if record.Category == "secondary" {
+		_, err = tx.Exec(
+			"INSERT INTO secondary_record (record_id, primary_record_id) VALUES (?, ?)",
+			record.ID, record.PrimaryID)
+
+		if err != nil {
+			c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
+	for _, diseaseHistory := range fullRecord.DiseasesHistory {
+		_, err = tx.Exec(
+			"INSERT INTO disease_history (record_id, disease_id, description) VALUES (?, ?, ?)",
+			record.ID, diseaseHistory.DiseaseID, diseaseHistory.Description)
+
+		if err != nil {
+			c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
+	for _, symptom := range fullRecord.Symptoms {
+		_, err = tx.Exec(
+			"INSERT INTO record_symptom (record_id, symptom_id) VALUES (?, ?)",
+			record.ID, symptom.ID)
+
+		if err != nil {
+			c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
+	for _, vital_sign := range fullRecord.VitalSigns {
+		_, err = tx.Exec(
+			"INSERT INTO record_vital_sign (record_id, vital_sign_id, value) VALUES (?, ?, ?)",
+			record.ID, vital_sign.VitalSignID, vital_sign.Value)
+
+		if err != nil {
+			c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
+	for _, disease := range fullRecord.Diseases {
+		_, err = tx.Exec(
+			"INSERT INTO idx (record_id, disease_id) VALUES (?, ?)",
+			record.ID, disease.ID)
+
+		if err != nil {
+			c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
+	for _, exam := range fullRecord.Exams {
+		_, err = tx.Exec(
+			"INSERT INTO record_exam (record_id, exam_id) VALUES (?, ?)",
+			record.ID, exam.ID)
+
+		if err != nil {
+			c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
+	for _, treatment := range fullRecord.Treatments {
+		_, err = tx.Exec(
+			"INSERT INTO treatment (record_id, medicine_id, quantity, dosage, frequency, instructions) VALUES (?, ?, ?, ?, ?, ?)",
+			record.ID, treatment.MedicineID, treatment.Quantity, treatment.Dosage, treatment.Frequency, treatment.Instructions)
+
+		if err != nil {
+			c.IndentedJSON(http.StatusExpectationFailed, gin.H{"message": err.Error()})
+			return
+		}
+	}
+
+	// Commit the transaction.
+	if err = tx.Commit(); err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
 	c.IndentedJSON(http.StatusCreated, record)
+}
+
+func getSecRecordsById(c *gin.Context) {
+	var fullSecRecords []model.FullRecord
+
+	primary_record_id := c.Param("id")
+
+	rows, err := db.Query(
+		`SELECT r.id, sr.primary_record_id, r.rdate 
+		FROM record AS r 
+		INNER JOIN secondary_record AS sr 
+		ON r.id = sr.record_id 
+		WHERE r.category='secondary' AND sr.primary_record_id=?`, primary_record_id)
+
+	if err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var fullSecRecord model.FullRecord
+
+		if err := rows.Scan(
+			&fullSecRecord.RecordObj.ID, &fullSecRecord.RecordObj.PrimaryID,
+			&fullSecRecord.RecordObj.Date); err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		rows, err := db.Query(
+			`SELECT t.record_id, m.id, m.name, m.dose, f.id, s.id, s.description, u.id, u.symbol, t.quantity, t.dosage, t.frequency, t.instructions 
+			FROM treatment AS t
+			INNER JOIN medicine AS m
+			ON t.medicine_id=m.id
+			INNER JOIN formulation AS f
+			ON m.formulation_id=f.id
+			INNER JOIN shape AS s
+			ON f.shape_id=s.id
+			INNER JOIN unit AS u
+			ON f.unit_id=u.id
+			WHERE t.record_id=?`, fullSecRecord.RecordObj.ID)
+
+		if err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		defer rows.Close()
+
+		for rows.Next() {
+			var treatment model.Treatment
+
+			if err := rows.Scan(
+				&treatment.RecordID, &treatment.MedicineID, &treatment.Name,
+				&treatment.Dose, &treatment.FormulationID, &treatment.ShapeID, &treatment.Description,
+				&treatment.UnitID, &treatment.Symbol, &treatment.Quantity, &treatment.Dosage,
+				&treatment.Frequency, &treatment.Instructions); err != nil {
+				c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+				return
+			}
+
+			fullSecRecord.Treatments = append(fullSecRecord.Treatments, treatment)
+		}
+
+		if err := rows.Err(); err != nil {
+			c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+			return
+		}
+
+		fullSecRecords = append(fullSecRecords, fullSecRecord)
+	}
+
+	if err := rows.Err(); err != nil {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": err.Error()})
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, fullSecRecords)
 }
